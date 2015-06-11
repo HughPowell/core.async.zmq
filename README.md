@@ -51,7 +51,7 @@ By default core.async.zmq uses the [JeroMQ](https://github.com/zeromq/jeromq) Ze
     :dependencies [[org.clojure/clojure "1.6.0"]
                    [org.clojure/core.async "0.1.0-SNAPSHOT"]
                    [org.zeromq/jeromq "0.3.5-SNAPSHOT"]
-                   [org.clojure/core.async.zmq "0.1.0-SNAPSHOT"]]
+                   [core.async.zmq "0.1.0-SNAPSHOT"]]
     :repositories [["releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
                                 :username [:gpg :env/NEXUS_USERNAME]
                                 :password [:gpg :env/NEXUS_PASSWORD]}]
