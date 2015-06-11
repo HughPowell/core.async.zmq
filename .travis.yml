@@ -1,0 +1,6 @@
+install:
+  - git clone https://github.com/clojure/core.async.git
+  - cd core.async
+  - lein install
+  - cd ..
+language: clojure

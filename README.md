@@ -2,9 +2,7 @@
 # core.async.zmq
 
 
-<!--
 [![Build Status](https://travis-ci.org/HughPowell/core.async.zmq.png?branch=master)](https://travis-ci.org/HughPowell/core.async.zmq)
--->
 
 <A name="#toc2" title="Contents" />
 ## Contents
