@@ -13,19 +13,17 @@
    :epgm "epgm://"})
 
 (def ^:const socket-types
-  {:pair   ZMQ/PAIR
+  {:req    ZMQ/REQ
+   :rep    ZMQ/REP
    :pub    ZMQ/PUB
    :sub    ZMQ/SUB
-   :req    ZMQ/REQ
-   :rep    ZMQ/REP
-   :xreq   ZMQ/XREQ
-   :xrep   ZMQ/XREP
-   :dealer ZMQ/DEALER
-   :router ZMQ/ROUTER
    :xpub   ZMQ/XPUB
    :xsub   ZMQ/XSUB
+   :dealer ZMQ/DEALER
+   :router ZMQ/ROUTER
    :pull   ZMQ/PULL
-   :push   ZMQ/PUSH})
+   :push   ZMQ/PUSH
+   :pair   ZMQ/PAIR})
 
 (def ^:const version
   {:major (ZMQ/getMajorVersion)
@@ -37,9 +35,9 @@
     (.addShutdownHook (Runtime/getRuntime) (Thread. #(.close context)))
     context))
 
-(defn- box [val]
+(defn- box [result]
   (reify clojure.lang.IDeref
-    (deref [_] val)))
+    (deref [_] result)))
 
 (deftype Channel
   [^ZMQ$Socket socket closed]
