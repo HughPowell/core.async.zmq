@@ -73,10 +73,10 @@
   (Channel. socket (atom false)))
 
 (defn chan
-  [type bind? transport endpoint]
+  [type bind-or-connect transport endpoint]
   (let [socket (.createSocket context (type socket-types))
         connection (str (transport transport-types) endpoint)]
-    (if bind?
-      (.bind socket connection)
-      (.connect socket connection))
+    (case bind-or-connect
+      :bind (.bind socket connection)
+      :connect (.connect socket connection))
     (channel socket)))

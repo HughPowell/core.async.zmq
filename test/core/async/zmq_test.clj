@@ -8,13 +8,13 @@
 
 (defn- client []
   (async/go
-   (let [client (zmq/chan :req false :tcp "localhost:5555")]
+   (let [client (zmq/chan :req :connect :tcp "localhost:5555")]
      (async/>! client greeting)
      (async/<! client))))
 
 (defn- server []
   (async/go
-   (let [server (zmq/chan :rep true :tcp "*:5555")
+   (let [server (zmq/chan :rep :bind :tcp "*:5555")
          result (async/<! server)]
      (async/>! server response)
      result)))
