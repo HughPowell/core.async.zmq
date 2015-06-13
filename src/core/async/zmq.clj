@@ -39,15 +39,26 @@
   (reify clojure.lang.IDeref
     (deref [_] result)))
 
+(defmulti serialize class)
+
+(defmethod serialize java.lang.String [data]
+  (.getBytes (str "\"" data "\"")))
+
+(defmethod serialize :default [data]
+  (.getBytes (str data)))
+
+(defn deserialize [^bytes data]
+  (read-string (String. data)))
+
 (deftype Channel
-  [^ZMQ$Socket socket closed]
+  [^ZMQ$Socket socket serialize-fn deserialize-fn closed]
   impl/ReadPort
   (take!
    [_ handler]
    (when-not @closed
      (when-let [value (if (impl/blockable? handler)
-                        (read-string (.recvStr socket))
-                        (read-string (.recvStr socket ZMQ/NOBLOCK)))]
+                        (deserialize-fn (.recv socket))
+                        (deserialize-fn (.recv socket ZMQ/NOBLOCK)))]
        (box value))))
   impl/WritePort
   (put!
@@ -55,9 +66,7 @@
    (if @closed
      (box false)
      (do
-       (.send socket (if (string? message)
-                       (str "\"" message "\"")
-                       (str message)))
+       (.send socket ^bytes (serialize-fn message))
        (box true))))
   impl/Channel
   (closed? [_] @closed)
@@ -70,8 +79,8 @@
             ;;  (.close socket)
             )))
 
-(defn- channel [socket]
-  (Channel. socket (atom false)))
+(defn- channel [socket serialize-fn deserialize-fn]
+  (Channel. socket serialize-fn deserialize-fn (atom false)))
 
 (defn chan
   [type bind-or-connect transport endpoint]
@@ -80,4 +89,4 @@
     (case bind-or-connect
       :bind (.bind socket connection)
       :connect (.connect socket connection))
-    (channel socket)))
+    (channel socket serialize deserialize)))
