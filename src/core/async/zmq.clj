@@ -32,7 +32,10 @@
    :minor (ZMQ/getMinorVersion)
    :patch (ZMQ/getPatchVersion)})
 
-(def ^:private ^ZContext context (ZContext.))
+(def ^:private ^ZContext context
+  (let [context (ZContext.)]
+    (.addShutdownHook (Runtime/getRuntime) (Thread. #(.close context)))
+    context))
 
 (defn- box [val]
   (reify clojure.lang.IDeref
@@ -63,7 +66,7 @@
   (close! [_]
           (when-not @closed
             (reset! closed true)
-            ;; ### The socket will be closed when the context closes.
+            ;; REVIEW The socket will be closed when the context closes.
             ;; Explicitly closing the socket here causes the process to hang
             ;; on termination when using JeroMQ.
             ;;  (.close socket)
