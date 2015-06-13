@@ -19,9 +19,26 @@
      (async/>! server response)
      result)))
 
-
 (deftest req-rep []
   (let [client (client)
         server (server)]
     (is (= (async/<!! server) greeting))
     (is (= (async/<!! client) response))))
+
+(defn- subscriber []
+  (->>
+   (zmq/chan :sub :connect :tcp "localhost:5556" 1)
+   (async/take 10)))
+
+(defn- publisher [control]
+  (async/go
+   (let [publisher (zmq/chan :pub :bind :tcp "*:5556")]
+     (while (not (async/poll! control))
+       (async/>! publisher (rand-int 10))))))
+
+(deftest pub-sub []
+  (let [subscriber (subscriber)
+        control (async/chan)
+        publisher (publisher control)]
+    (async/<!! subscriber)
+    (async/>!! control 1)))

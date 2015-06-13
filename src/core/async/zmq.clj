@@ -39,13 +39,21 @@
   (reify clojure.lang.IDeref
     (deref [_] result)))
 
-(defmulti serialize class)
+(defmulti serialize-data class)
 
-(defmethod serialize java.lang.String [data]
+(defmethod serialize-data java.lang.String [data]
   (.getBytes (str "\"" data "\"")))
 
-(defmethod serialize :default [data]
+(defmethod serialize-data :default [data]
   (.getBytes (str data)))
+
+(defmulti serialize-topic class)
+
+(defmethod serialize-topic java.lang.String [topic]
+  (.getBytes (str "\"" topic)))
+
+(defmethod serialize-topic :default [topic]
+  (.getBytes (str topic)))
 
 (defn deserialize [^bytes data]
   (read-string (String. data)))
@@ -82,11 +90,20 @@
 (defn- channel [socket serialize-fn deserialize-fn]
   (Channel. socket serialize-fn deserialize-fn (atom false)))
 
+(defn- subscribe [^ZMQ$Socket socket topic serialize-fn]
+  (.subscribe socket ^bytes (serialize-fn topic)))
+
 (defn chan
-  [type bind-or-connect transport endpoint]
-  (let [socket (.createSocket context (type socket-types))
-        connection (str (transport transport-types) endpoint)]
-    (case bind-or-connect
-      :bind (.bind socket connection)
-      :connect (.connect socket connection))
-    (channel socket serialize deserialize)))
+  ([socket-type bind-or-connect transport endpoint]
+   (chan socket-type bind-or-connect transport endpoint nil))
+  ([socket-type bind-or-connect transport endpoint topics]
+   (let [socket (.createSocket context (socket-type socket-types))
+         connection (str (transport transport-types) endpoint)]
+     (case bind-or-connect
+       :bind (.bind socket connection)
+       :connect (.connect socket connection))
+     (when topics
+       (if (seq? topics)
+         (doseq [topic topics] (subscribe socket topic serialize-topic))
+         (subscribe socket topics serialize-topic)))
+     (channel socket serialize-data deserialize))))
