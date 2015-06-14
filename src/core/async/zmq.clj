@@ -1,6 +1,7 @@
 (ns ^{:skip-wiki true}
   core.async.zmq
-  (:require [clojure.core.async.impl.protocols :as impl])
+  (:require [clojure.core.async.impl.protocols :as impl]
+            [clojure.edn :as edn])
   (:import [org.zeromq ZContext ZMQ ZMQ$Socket]))
 
 (set! *warn-on-reflection* true)
@@ -56,7 +57,7 @@
   (.getBytes (str topic)))
 
 (defn deserialize [^bytes data]
-  (read-string (String. data)))
+  (edn/read-string (String. data)))
 
 (defn- receive!
   ([receive-fn ^ZMQ$Socket socket deserialize-fn]

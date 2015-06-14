@@ -69,3 +69,13 @@
         server (server response "*:5558")]
     (is (= (async/<!! server) greeting))
     (is (= (async/<!! client) response))))
+
+
+(deftest router []
+  (let [greeting "Hello"
+        client (client greeting "localhost:5559")
+        receiver (zmq/chan :router :bind :tcp "*:5559")
+        response (vec (async/<!! receiver))]
+    (is (= (nth response 2) greeting))
+    (async/>!! receiver (assoc response 2 "World"))
+    (is (= (async/<!! client) "World"))))
