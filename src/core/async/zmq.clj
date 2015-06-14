@@ -6,6 +6,8 @@
 
 (set! *warn-on-reflection* true)
 
+(def ^:const bytes-type (class (byte-array 0)))
+
 (def ^:const transport-types
   {:inproc "inproc://"
    :ipc "ipc://"
@@ -45,6 +47,9 @@
 (defmethod serialize-data java.lang.String [data]
   (.getBytes (str "\"" data "\"")))
 
+(defmethod serialize-data bytes-type [data]
+  data)
+
 (defmethod serialize-data :default [data]
   (.getBytes (str data)))
 
@@ -57,7 +62,10 @@
   (.getBytes (str topic)))
 
 (defn deserialize [^bytes data]
-  (edn/read-string (String. data)))
+  (let [non-printable-ascii (set (byte-array (range 0x00 0x1F)))]
+    (if (some non-printable-ascii data)
+      data
+      (edn/read-string (String. data)))))
 
 (defn- receive!
   ([receive-fn ^ZMQ$Socket socket deserialize-fn]
