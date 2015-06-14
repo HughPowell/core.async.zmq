@@ -1,6 +1,7 @@
 (ns ^{:skip-wiki true}
   core.async.zmq
   (:require [clojure.core.async.impl.protocols :as impl]
+            [clojure.core.async :as async]
             [clojure.edn :as edn])
   (:import [org.zeromq ZContext ZMQ ZMQ$Socket]))
 
@@ -189,3 +190,18 @@
   [bind-or-connect transport endpoint]
   (-> (init-socket :pull bind-or-connect transport endpoint)
       (read-only-channel deserialize)))
+
+(defn chan-proxy
+  ([frontend backend]
+   (chan-proxy frontend backend nil))
+  ([frontend backend capture]
+   (letfn [(pipe [in out capture]
+                 (async/go-loop
+                  []
+                  (let [data (async/<! in)]
+                    (when capture
+                      (async/>! capture data))
+                    (async/>! out data)
+                    (recur))))]
+     (pipe frontend backend capture)
+     (pipe backend frontend capture))))
