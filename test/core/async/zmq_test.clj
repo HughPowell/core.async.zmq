@@ -27,12 +27,12 @@
 
 (defn- subscriber []
   (->>
-   (zmq/chan :sub :connect :tcp "localhost:5556" 1)
+   (zmq/sub-chan :connect :tcp "localhost:5556" 1)
    (async/take 10)))
 
 (defn- publisher [control]
   (async/go
-   (let [publisher (zmq/chan :pub :bind :tcp "*:5556")]
+   (let [publisher (zmq/pub-chan :bind :tcp "*:5556")]
      (while (not (async/poll! control))
        (async/>! publisher (rand-int 10))))))
 

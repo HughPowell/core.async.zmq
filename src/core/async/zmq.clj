@@ -58,52 +58,93 @@
 (defn deserialize [^bytes data]
   (read-string (String. data)))
 
-(deftype Channel
+(defn- take! [^ZMQ$Socket socket closed handler deserialize-fn]
+  (when-not @closed
+    (when-let [value (if (impl/blockable? handler)
+                       (deserialize-fn (.recv socket))
+                       (deserialize-fn (.recv socket ZMQ/NOBLOCK)))]
+      (box value))))
+
+(defn- put! [^ZMQ$Socket socket closed message serialize-fn]
+  (if @closed
+    (box false)
+    (do
+      (.send socket ^bytes (serialize-fn message))
+      (box true))))
+
+(defn- close! [^ZMQ$Socket socket closed]
+  (when-not @closed
+    (reset! closed true)
+    ;; REVIEW The socket will be closed when the context closes.
+    ;; Explicitly closing the socket here causes the process to hang
+    ;; on termination when using JeroMQ.
+    ;;  (.close socket)
+    ))
+
+(deftype ReadWriteChannel
   [^ZMQ$Socket socket serialize-fn deserialize-fn closed]
   impl/ReadPort
-  (take!
-   [_ handler]
-   (when-not @closed
-     (when-let [value (if (impl/blockable? handler)
-                        (deserialize-fn (.recv socket))
-                        (deserialize-fn (.recv socket ZMQ/NOBLOCK)))]
-       (box value))))
+  (take! [_ handler] (take! socket closed handler deserialize-fn))
   impl/WritePort
-  (put!
-   [_ message _]
-   (if @closed
-     (box false)
-     (do
-       (.send socket ^bytes (serialize-fn message))
-       (box true))))
+  (put! [_ message _] (put! socket closed message serialize-fn))
   impl/Channel
   (closed? [_] @closed)
-  (close! [_]
-          (when-not @closed
-            (reset! closed true)
-            ;; REVIEW The socket will be closed when the context closes.
-            ;; Explicitly closing the socket here causes the process to hang
-            ;; on termination when using JeroMQ.
-            ;;  (.close socket)
-            )))
+  (close! [_] (close! socket closed)))
 
-(defn- channel [socket serialize-fn deserialize-fn]
-  (Channel. socket serialize-fn deserialize-fn (atom false)))
+(defn- read-write-channel [socket serialize-fn deserialize-fn]
+  (ReadWriteChannel. socket serialize-fn deserialize-fn (atom false)))
 
-(defn- subscribe [^ZMQ$Socket socket topic serialize-fn]
-  (.subscribe socket ^bytes (serialize-fn topic)))
+(deftype ReadOnlyChannel
+  [^ZMQ$Socket socket deserialize-fn closed]
+  impl/ReadPort
+  (take! [_ handler] (take! socket closed handler deserialize-fn))
+  impl/Channel
+  (closed? [_] @closed)
+  (close! [_] (close! socket closed)))
 
-(defn chan
-  ([socket-type bind-or-connect transport endpoint]
-   (chan socket-type bind-or-connect transport endpoint nil))
-  ([socket-type bind-or-connect transport endpoint topics]
+(defn- read-only-channel [socket deserialize-fn]
+  (ReadOnlyChannel. socket deserialize-fn (atom false)))
+
+(deftype WriteOnlyChannel
+  [^ZMQ$Socket socket serialize-fn closed]
+  impl/WritePort
+  (put! [_ message _] (put! socket closed message serialize-fn))
+  impl/Channel
+  (closed? [_] @closed)
+  (close! [_] (close! socket closed)))
+
+(defn- write-only-channel [socket serialize-fn]
+  (WriteOnlyChannel. socket serialize-fn (atom false)))
+
+(defn- init-socket [socket-type bind-or-connect transport endpoint]
    (let [socket (.createSocket context (socket-type socket-types))
          connection (str (transport transport-types) endpoint)]
      (case bind-or-connect
        :bind (.bind socket connection)
        :connect (.connect socket connection))
-     (when topics
-       (if (seq? topics)
-         (doseq [topic topics] (subscribe socket topic serialize-topic))
-         (subscribe socket topics serialize-topic)))
-     (channel socket serialize-data deserialize))))
+     socket))
+
+(defn chan
+  [socket-type bind-or-connect transport endpoint]
+  (-> (init-socket socket-type bind-or-connect transport endpoint)
+      (read-write-channel serialize-data deserialize)))
+
+(defn pub-chan
+  [bind-or-connect transport endpoint]
+  (-> (init-socket :pub bind-or-connect transport endpoint)
+      (write-only-channel serialize-data)))
+
+(defn sub-chan
+  [bind-or-connect transport endpoint topics]
+  (letfn [(subscribe [^ZMQ$Socket socket topic serialize-fn]
+                     (letfn [(add-subscription
+                              [^ZMQ$Socket socket topics]
+                              (.subscribe socket ^bytes (serialize-fn topic)))]
+                       (if (seq? topics)
+                         (doseq [topic topics]
+                           (add-subscription socket topic))
+                         (add-subscription socket topic))
+                       socket))]
+    (-> (init-socket :sub bind-or-connect transport endpoint)
+        (subscribe topics serialize-topic)
+        (read-only-channel deserialize))))
