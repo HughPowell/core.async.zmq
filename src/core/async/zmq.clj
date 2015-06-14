@@ -63,7 +63,7 @@
 
 (defn deserialize [^bytes data]
   (let [non-printable-ascii (set (byte-array (range 0x00 0x1F)))]
-    (if (some non-printable-ascii data)
+    (if (or (some non-printable-ascii data) (nil? data))
       data
       (edn/read-string (String. data)))))
 
