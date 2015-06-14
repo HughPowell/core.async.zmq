@@ -31,10 +31,11 @@
    (async/take 10)))
 
 (defn- publisher [control]
-  (async/go
-   (let [publisher (zmq/pub-chan :bind :tcp "*:5556")]
-     (while (not (async/poll! control))
-       (async/>! publisher (rand-int 10))))))
+  (async/go-loop
+   [publisher (zmq/pub-chan :bind :tcp "*:5556")]
+   (async/>! publisher (rand-int 10))
+   (when-not (async/poll! control)
+     (recur publisher))))
 
 (deftest pub-sub []
   (let [subscriber (subscriber)
