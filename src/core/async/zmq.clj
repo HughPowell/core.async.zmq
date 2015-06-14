@@ -117,12 +117,12 @@
   (WriteOnlyChannel. socket serialize-fn (atom false)))
 
 (defn- init-socket [socket-type bind-or-connect transport endpoint]
-   (let [socket (.createSocket context (socket-type socket-types))
-         connection (str (transport transport-types) endpoint)]
-     (case bind-or-connect
-       :bind (.bind socket connection)
-       :connect (.connect socket connection))
-     socket))
+  (let [socket (.createSocket context (socket-type socket-types))
+        connection (str (transport transport-types) endpoint)]
+    (case bind-or-connect
+      :bind (.bind socket connection)
+      :connect (.connect socket connection))
+    socket))
 
 (defn chan
   [socket-type bind-or-connect transport endpoint]
@@ -148,3 +148,13 @@
     (-> (init-socket :sub bind-or-connect transport endpoint)
         (subscribe topics serialize-topic)
         (read-only-channel deserialize))))
+
+(defn push-chan
+  [bind-or-connect transport endpoint]
+  (-> (init-socket :push bind-or-connect transport endpoint)
+      (write-only-channel serialize-data)))
+
+(defn pull-chan
+  [bind-or-connect transport endpoint]
+  (-> (init-socket :pull bind-or-connect transport endpoint)
+      (read-only-channel deserialize)))

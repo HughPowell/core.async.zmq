@@ -42,3 +42,20 @@
         publisher (publisher control)]
     (async/<!! subscriber)
     (async/>!! control 1)))
+
+(defn- sender []
+  (async/go
+   (->
+    (zmq/push-chan :bind :tcp "*:5557")
+    (async/>! greeting))))
+
+(defn- receiver []
+  (async/go
+   (->
+    (zmq/pull-chan :connect :tcp "localhost:5557")
+    async/<!)))
+
+(deftest push-pull []
+  (let [sender (sender)
+        receiver (receiver)]
+    (is (= (async/<!! receiver) greeting))))
