@@ -181,6 +181,16 @@
         (subscribe topics serialize-topic)
         (read-only-channel deserialize))))
 
+(defn xpub-chan
+  [bind-or-connect transport endpoint]
+  (-> (init-socket :xpub bind-or-connect transport endpoint)
+      (write-only-channel serialize-data)))
+
+(defn xsub-chan
+  [bind-or-connect transport endpoint]
+  (-> (init-socket :xsub bind-or-connect transport endpoint)
+      (read-only-channel deserialize)))
+
 (defn push-chan
   [bind-or-connect transport endpoint]
   (-> (init-socket :push bind-or-connect transport endpoint)
