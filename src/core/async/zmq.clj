@@ -58,18 +58,40 @@
 (defn deserialize [^bytes data]
   (read-string (String. data)))
 
+(defn- receive!
+  ([receive-fn ^ZMQ$Socket socket deserialize-fn]
+   (receive! receive-fn socket deserialize-fn false))
+  ([receive-fn ^ZMQ$Socket socket deserialize-fn is-multipart?]
+   (let [data (deserialize-fn (receive-fn))]
+     (if (.hasReceiveMore socket)
+       (cons data (lazy-seq (receive! receive-fn socket deserialize-fn true)))
+       (if is-multipart?
+         (list data)
+         data)))))
+
 (defn- take! [^ZMQ$Socket socket closed handler deserialize-fn]
   (when-not @closed
-    (when-let [value (if (impl/blockable? handler)
-                       (deserialize-fn (.recv socket))
-                       (deserialize-fn (.recv socket ZMQ/NOBLOCK)))]
+    (when-let [value
+               (if (impl/blockable? handler)
+                 (receive! #(.recv socket) socket deserialize-fn)
+                 (receive! #(.recv socket ZMQ/NOBLOCK) socket deserialize-fn))]
       (box value))))
+
+(defn- send! [^ZMQ$Socket socket message serialize-fn]
+  (if-not (sequential? message)
+    (.send socket ^bytes (serialize-fn message))
+    (let [remaining (rest message)]
+      (if (empty? remaining)
+        (recur socket (first message) serialize-fn)
+        (do
+          (.sendMore socket ^bytes (serialize-fn (first message)))
+          (recur socket remaining serialize-fn))))))
 
 (defn- put! [^ZMQ$Socket socket closed message serialize-fn]
   (if @closed
     (box false)
     (do
-      (.send socket ^bytes (serialize-fn message))
+      (send! socket message serialize-fn)
       (box true))))
 
 (defn- close! [^ZMQ$Socket socket closed]

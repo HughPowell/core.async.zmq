@@ -3,25 +3,25 @@
             [clojure.core.async :as async]
             [core.async.zmq :as zmq]))
 
-(def ^:private greeting "Hello")
-(def ^:private response "World")
-
-(defn- client []
+(defn- client [greeting endpoint]
   (async/go
-   (let [client (zmq/chan :req :connect :tcp "localhost:5555")]
+   (let [client (zmq/chan :req :connect :tcp endpoint)]
      (async/>! client greeting)
      (async/<! client))))
 
-(defn- server []
+(defn- server [response endpoint]
   (async/go
-   (let [server (zmq/chan :rep :bind :tcp "*:5555")
-         result (async/<! server)]
+   (let [server (zmq/chan :rep :bind :tcp endpoint)
+         data (async/<! server)
+         result (if (seq? data) (doall data) data)]
      (async/>! server response)
      result)))
 
 (deftest req-rep []
-  (let [client (client)
-        server (server)]
+  (let [greeting "Hello"
+        response "World"
+        client (client greeting "localhost:5555")
+        server (server response "*:5555")]
     (is (= (async/<!! server) greeting))
     (is (= (async/<!! client) response))))
 
@@ -43,7 +43,7 @@
     (async/<!! subscriber)
     (async/>!! control 1)))
 
-(defn- sender []
+(defn- sender [greeting]
   (async/go
    (->
     (zmq/push-chan :bind :tcp "*:5557")
@@ -56,6 +56,15 @@
     async/<!)))
 
 (deftest push-pull []
-  (let [sender (sender)
+  (let [greeting "Hello"
+        sender (sender greeting)
         receiver (receiver)]
     (is (= (async/<!! receiver) greeting))))
+
+(deftest multi-part-messages []
+  (let [greeting '("One" "Two" "Three")
+        response [1 2 3]
+        client (client greeting "localhost:5558")
+        server (server response "*:5558")]
+    (is (= (async/<!! server) greeting))
+    (is (= (async/<!! client) response))))
