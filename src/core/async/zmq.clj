@@ -72,22 +72,31 @@
       (edn/read-string (String. data)))))
 
 (defn- receive!
-  ([receive-fn ^ZMQ$Socket socket deserialize-fn]
-   (receive! receive-fn socket deserialize-fn false))
-  ([receive-fn ^ZMQ$Socket socket deserialize-fn is-multipart?]
-   (let [data (deserialize-fn (receive-fn))]
+  ([^ZMQ$Socket socket deserialize-fn]
+   (receive! socket deserialize-fn (.recv socket) false))
+  ([^ZMQ$Socket socket deserialize-fn frame]
+   (receive! socket deserialize-fn frame true))
+  ([^ZMQ$Socket socket deserialize-fn frame first?]
+   (let [data (deserialize-fn frame)]
      (if (.hasReceiveMore socket)
-       (cons data (lazy-seq (receive! receive-fn socket deserialize-fn true)))
-       (if is-multipart?
-         (list data)
-         data)))))
+       (cons data (lazy-seq (receive! socket deserialize-fn)))
+       (if first? data (list data))))))
+
+(defn- blocking-receive!
+  [^ZMQ$Socket socket handler deserialize-fn]
+  (if-let [commit (and (impl/active? handler) (impl/commit handler))]
+    (.start (Thread.
+             #(->> (.recv socket)
+                   (receive! socket deserialize-fn)
+                   commit)))))
 
 (defn- take! [^ZMQ$Socket socket closed handler deserialize-fn]
   (when-not @closed
     (when-let [value
-               (if (impl/blockable? handler)
-                 (receive! #(.recv socket) socket deserialize-fn)
-                 (receive! #(.recv socket ZMQ/NOBLOCK) socket deserialize-fn))]
+               (if-let [frame (.recv socket ZMQ/NOBLOCK)]
+                 (receive! socket deserialize-fn frame)
+                 (when (impl/blockable? handler)
+                   (blocking-receive! socket handler deserialize-fn)))]
       (box value))))
 
 (defn- send! [^ZMQ$Socket socket message serialize-fn]
