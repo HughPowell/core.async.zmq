@@ -1,9 +1,13 @@
 (ns ^{:skip-wiki true}
   core.async.zmq
   (:require [clojure.core.async.impl.protocols :as impl]
+            [clojure.core.async.impl.dispatch :as dispatch]
+            [clojure.core.async.impl.mutex :as mutex]
             [clojure.core.async :as async]
             [clojure.edn :as edn])
-  (:import [org.zeromq ZContext ZMQ ZMQ$Socket]))
+  (:import [org.zeromq ZContext ZMQ ZMQ$Socket]
+           [java.util.concurrent.locks Lock]
+           [java.lang AutoCloseable]))
 
 (set! *warn-on-reflection* true)
 
@@ -42,10 +46,6 @@
     (.addShutdownHook (Runtime/getRuntime) (Thread. #(.close context)))
     context))
 
-(defn- box [result]
-  (reify clojure.lang.IDeref
-    (deref [_] result)))
-
 (defmulti serialize-data class)
 
 (defmethod serialize-data java.lang.String [data]
@@ -82,22 +82,61 @@
        (cons data (lazy-seq (receive! socket deserialize-fn)))
        (if first? data (list data))))))
 
-(defn- blocking-receive!
-  [^ZMQ$Socket socket handler deserialize-fn]
-  (if-let [commit (and (impl/active? handler) (impl/commit handler))]
-    (.start (Thread.
-             #(->> (.recv socket)
-                   (receive! socket deserialize-fn)
-                   commit)))))
+(defn closeable-lock
+  [^Lock lock]
+  (.lock lock)
+  (reify
+    AutoCloseable
+    (close [_] (.unlock lock))))
 
-(defn- take! [^ZMQ$Socket socket closed handler deserialize-fn]
+(defn- box [result]
+  (reify clojure.lang.IDeref
+    (deref [_] result)))
+
+(def ^:private pollers (atom {}))
+
+;;; HACK: Assuming a non-zero lock-id means we're dealing with alt(s) is not
+;;;       safe
+(defmulti take!
+  (fn [_ _ _ handler] (impl/lock-id handler)))
+
+;;; FIXME: Take account of the handler, saving any message that is received
+;;;        while the handler in inactive
+(defmethod take! 0
+  [^ZMQ$Socket socket deserialize-fn closed ^Lock handler]
   (when-not @closed
-    (when-let [value
-               (if-let [frame (.recv socket ZMQ/NOBLOCK)]
-                 (receive! socket deserialize-fn frame)
-                 (when (impl/blockable? handler)
-                   (blocking-receive! socket handler deserialize-fn)))]
-      (box value))))
+    (->> (.recv socket)
+         (receive! socket deserialize-fn)
+         box)))
+
+;;; HACK: Polling is not a good idea, but the only way I could get it to work
+(defmethod take! :default
+  [^ZMQ$Socket socket deserialize-fn closed ^Lock handler]
+  (when-not @closed
+    (with-open [^AutoCloseable lock (closeable-lock handler)]
+      (when (impl/active? handler)
+        (let [poll (fn []
+                     (with-open [^AutoCloseable lock (closeable-lock handler)]
+                       (when-let [message (and (impl/active? handler)
+                                               (.recv socket ZMQ/NOBLOCK))]
+                         (let [commit (impl/commit handler)]
+                           (->> message
+                                (receive! socket deserialize-fn)
+                                commit)
+                           (swap! pollers dissoc (impl/lock-id handler))))))
+              lock-id (impl/lock-id handler)
+              poll-set (->>
+                        (get @pollers lock-id #{})
+                        (cons poll)
+                        (swap! pollers assoc lock-id))]
+          (when (= (count (poll-set lock-id)) 1)
+            (dispatch/run
+             (fn []
+               (while (impl/active? handler)
+                 (dorun (map
+                         #(%)
+                         (get @pollers lock-id)))
+                 (Thread/sleep 1))))))))))
 
 (defn- send! [^ZMQ$Socket socket message serialize-fn]
   (if-not (sequential? message)
@@ -109,10 +148,10 @@
           (.sendMore socket ^bytes (serialize-fn (first message)))
           (recur socket remaining serialize-fn))))))
 
-(defn- put! [^ZMQ$Socket socket closed message serialize-fn]
+(defn- put! [^ZMQ$Socket socket closed message serialize-fn handler]
   (if @closed
     (box false)
-    (do
+    (with-open [^AutoCloseable lock (closeable-lock handler)]
       (send! socket message serialize-fn)
       (box true))))
 
@@ -128,9 +167,11 @@
 (deftype ReadWriteChannel
   [^ZMQ$Socket socket serialize-fn deserialize-fn closed]
   impl/ReadPort
-  (take! [_ handler] (take! socket closed handler deserialize-fn))
+  (take! [_ handler]
+         (take! socket deserialize-fn closed handler))
   impl/WritePort
-  (put! [_ message _] (put! socket closed message serialize-fn))
+  (put! [_ message handler]
+        (put! socket closed message serialize-fn handler))
   impl/Channel
   (closed? [_] @closed)
   (close! [_] (close! socket closed)))
@@ -141,7 +182,8 @@
 (deftype ReadOnlyChannel
   [^ZMQ$Socket socket deserialize-fn closed]
   impl/ReadPort
-  (take! [_ handler] (take! socket closed handler deserialize-fn))
+  (take! [_ handler]
+         (take! socket deserialize-fn closed handler))
   impl/Channel
   (closed? [_] @closed)
   (close! [_] (close! socket closed)))
@@ -152,7 +194,7 @@
 (deftype WriteOnlyChannel
   [^ZMQ$Socket socket serialize-fn closed]
   impl/WritePort
-  (put! [_ message _] (put! socket closed message serialize-fn))
+  (put! [_ message handler] (put! socket closed message serialize-fn handler))
   impl/Channel
   (closed? [_] @closed)
   (close! [_] (close! socket closed)))

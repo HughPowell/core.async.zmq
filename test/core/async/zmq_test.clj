@@ -79,3 +79,34 @@
     (is (= (nth response 2) greeting))
     (async/>!! receiver (assoc response 2 "World"))
     (is (= (async/<!! client) "World"))))
+
+(deftest alt []
+  (async/go-loop
+   [frontend (zmq/chan :router :bind :tcp "*:5560")
+    backend (zmq/chan :dealer :bind :tcp "*:5561")
+    counter 0]
+   (when (< counter 60)
+     (async/alt!
+      frontend ([msg] (async/>! backend msg))
+      backend ([msg] (async/>! frontend msg)))
+     (recur frontend backend (inc counter))))
+
+  (dotimes [n 3]
+    (async/go-loop
+     [worker (zmq/chan :rep :connect :tcp "localhost:5561")
+      counter 0]
+     (when (< counter 10)
+       (async/>! worker (async/<! worker))
+       (recur worker (inc counter)))))
+
+  (dorun
+   (map
+    #(async/<!! %)
+    (repeatedly 3
+                #(async/go-loop
+                  [client (zmq/chan :req :connect :tcp "localhost:5560")
+                   counter 0]
+                  (when (< counter 10)
+                    (async/>! client "DATA")
+                    (async/<! client)
+                    (recur client (inc counter))))))))
