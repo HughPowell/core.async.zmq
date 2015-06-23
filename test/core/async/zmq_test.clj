@@ -83,21 +83,17 @@
 (deftest alt []
   (async/go-loop
    [frontend (zmq/chan :router :bind :tcp "*:5560")
-    backend (zmq/chan :dealer :bind :tcp "*:5561")
-    counter 0]
-   (when (< counter 60)
+    backend (zmq/chan :dealer :bind :tcp "*:5561")]
      (async/alt!
       frontend ([msg] (async/>! backend msg))
       backend ([msg] (async/>! frontend msg)))
-     (recur frontend backend (inc counter))))
+     (recur frontend backend))
 
   (dotimes [n 3]
     (async/go-loop
-     [worker (zmq/chan :rep :connect :tcp "localhost:5561")
-      counter 0]
-     (when (< counter 10)
+     [worker (zmq/chan :rep :connect :tcp "localhost:5561")]
        (async/>! worker (async/<! worker))
-       (recur worker (inc counter)))))
+       (recur worker)))
 
   (dorun
    (map

@@ -5,7 +5,7 @@
             [clojure.core.async.impl.mutex :as mutex]
             [clojure.core.async :as async]
             [clojure.edn :as edn])
-  (:import [org.zeromq ZContext ZMQ ZMQ$Socket]
+  (:import [org.zeromq ZContext ZMQ ZMQ$Socket ZMQException]
            [java.util.concurrent.locks Lock]
            [java.lang AutoCloseable]))
 
@@ -71,16 +71,31 @@
       data
       (edn/read-string (String. data)))))
 
+(defn- close! [^ZMQ$Socket socket closed]
+  (when-not @closed
+    (reset! closed true)
+    (.destroySocket context socket)))
+
+(defn- safe-recv!
+  ([^ZMQ$Socket socket closed]
+   (safe-recv! socket closed 0))
+  ([^ZMQ$Socket socket closed flags]
+   (try
+     (.recv socket flags)
+     (catch ZMQException e
+       (close! socket closed)))))
+
 (defn- receive!
-  ([^ZMQ$Socket socket deserialize-fn]
-   (receive! socket deserialize-fn (.recv socket) false))
-  ([^ZMQ$Socket socket deserialize-fn frame]
-   (receive! socket deserialize-fn frame true))
-  ([^ZMQ$Socket socket deserialize-fn frame first?]
+  ([^ZMQ$Socket socket deserialize-fn closed]
+   (receive! socket deserialize-fn closed (safe-recv! socket closed) false))
+  ([^ZMQ$Socket socket deserialize-fn closed frame]
+   (receive! socket deserialize-fn closed frame true))
+  ([^ZMQ$Socket socket deserialize-fn closed frame first?]
    (let [data (deserialize-fn frame)]
-     (if (.hasReceiveMore socket)
-       (cons data (lazy-seq (receive! socket deserialize-fn)))
-       (if first? data (list data))))))
+     (when-not @closed
+       (if (.hasReceiveMore socket)
+         (cons data (lazy-seq (receive! socket deserialize-fn closed)))
+         (if first? data (list data)))))))
 
 (defn closeable-lock
   [^Lock lock]
@@ -105,8 +120,8 @@
 (defmethod take! 0
   [^ZMQ$Socket socket deserialize-fn closed ^Lock handler]
   (when-not @closed
-    (->> (.recv socket)
-         (receive! socket deserialize-fn)
+    (->> (safe-recv! socket closed)
+         (receive! socket deserialize-fn closed)
          box)))
 
 ;;; HACK: Polling is not a good idea, but the only way I could get it to work
@@ -117,11 +132,12 @@
       (when (impl/active? handler)
         (let [poll (fn []
                      (with-open [^AutoCloseable lock (closeable-lock handler)]
-                       (when-let [message (and (impl/active? handler)
-                                               (.recv socket ZMQ/NOBLOCK))]
+                       (when-let [message
+                                  (and (impl/active? handler)
+                                       (safe-recv! socket closed ZMQ/NOBLOCK))]
                          (let [commit (impl/commit handler)]
                            (->> message
-                                (receive! socket deserialize-fn)
+                                (receive! socket deserialize-fn closed)
                                 commit)
                            (swap! pollers dissoc (impl/lock-id handler))))))
               lock-id (impl/lock-id handler)
@@ -152,17 +168,10 @@
   (if @closed
     (box false)
     (with-open [^AutoCloseable lock (closeable-lock handler)]
-      (send! socket message serialize-fn)
+      (try
+        (send! socket message serialize-fn)
+        (catch ZMQException e (close! socket closed) (box false)))
       (box true))))
-
-(defn- close! [^ZMQ$Socket socket closed]
-  (when-not @closed
-    (reset! closed true)
-    ;; REVIEW The socket will be closed when the context closes.
-    ;; Explicitly closing the socket here causes the process to hang
-    ;; on termination when using JeroMQ.
-    ;;  (.close socket)
-    ))
 
 (deftype ReadWriteChannel
   [^ZMQ$Socket socket serialize-fn deserialize-fn closed]
