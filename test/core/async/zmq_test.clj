@@ -5,13 +5,13 @@
 
 (defn- client [greeting endpoint]
   (async/go
-   (let [client (zmq/chan :req :connect :tcp endpoint)]
+   (let [client (zmq/req-chan :connect :tcp endpoint)]
      (async/>! client greeting)
      (async/<! client))))
 
 (defn- server [response endpoint]
   (async/go
-   (let [server (zmq/chan :rep :bind :tcp endpoint)
+   (let [server (zmq/rep-chan :bind :tcp endpoint)
          data (async/<! server)
          result (if (seq? data) (doall data) data)]
      (async/>! server response)
@@ -74,7 +74,7 @@
 (deftest router []
   (let [greeting "Hello"
         client (client greeting "localhost:5559")
-        receiver (zmq/chan :router :bind :tcp "*:5559")
+        receiver (zmq/router-chan :bind :tcp "*:5559")
         response (vec (async/<!! receiver))]
     (is (= (nth response 2) greeting))
     (async/>!! receiver (assoc response 2 "World"))
@@ -82,8 +82,8 @@
 
 (deftest alt []
   (async/go-loop
-   [frontend (zmq/chan :router :bind :tcp "*:5560")
-    backend (zmq/chan :dealer :bind :tcp "*:5561")]
+   [frontend (zmq/router-chan :bind :tcp "*:5560")
+    backend (zmq/dealer-chan :bind :tcp "*:5561")]
      (async/alt!
       frontend ([msg] (async/>! backend msg))
       backend ([msg] (async/>! frontend msg)))
@@ -91,7 +91,7 @@
 
   (dotimes [n 3]
     (async/go-loop
-     [worker (zmq/chan :rep :connect :tcp "localhost:5561")]
+     [worker (zmq/rep-chan :connect :tcp "localhost:5561")]
        (async/>! worker (async/<! worker))
        (recur worker)))
 
@@ -100,7 +100,7 @@
     #(async/<!! %)
     (repeatedly 3
                 #(async/go-loop
-                  [client (zmq/chan :req :connect :tcp "localhost:5560")
+                  [client (zmq/req-chan :connect :tcp "localhost:5560")
                    counter 0]
                   (when (< counter 10)
                     (async/>! client "DATA")

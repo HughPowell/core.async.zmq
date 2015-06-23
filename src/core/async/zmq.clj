@@ -20,19 +20,6 @@
    :pgm "pgm://"
    :epgm "epgm://"})
 
-(def ^:const socket-types
-  {:req    ZMQ/REQ
-   :rep    ZMQ/REP
-   :pub    ZMQ/PUB
-   :sub    ZMQ/SUB
-   :xpub   ZMQ/XPUB
-   :xsub   ZMQ/XSUB
-   :dealer ZMQ/DEALER
-   :router ZMQ/ROUTER
-   :pull   ZMQ/PULL
-   :push   ZMQ/PUSH
-   :pair   ZMQ/PAIR})
-
 (def ^:const socket-options
   {:sndhwm #(.setSndHWM ^ZMQ$Socket %1 %2)})
 
@@ -212,7 +199,7 @@
   (WriteOnlyChannel. socket serialize-fn (atom false)))
 
 (defn- init-socket [socket-type bind-or-connect transport endpoint options]
-  (let [socket (.createSocket context (socket-type socket-types))
+  (let [socket (.createSocket context socket-type)
         connection (str (transport transport-types) endpoint)]
     (when (first options)
       (let [opts (apply hash-map options)
@@ -224,14 +211,22 @@
       :connect (.connect socket connection))
     socket))
 
-(defn chan
-  [socket-type bind-or-connect transport endpoint & options]
+(defn- chan
+  [socket-type bind-or-connect transport endpoint options]
   (-> (init-socket socket-type bind-or-connect transport endpoint options)
       (read-write-channel serialize-data deserialize)))
 
+(defn req-chan
+  [bind-or-connect transport endpoint & options]
+  (chan ZMQ/REQ bind-or-connect transport endpoint options))
+
+(defn rep-chan
+  [bind-or-connect transport endpoint & options]
+  (chan ZMQ/REP bind-or-connect transport endpoint options))
+
 (defn pub-chan
   [bind-or-connect transport endpoint & options]
-  (-> (init-socket :pub bind-or-connect transport endpoint options)
+  (-> (init-socket ZMQ/PUB bind-or-connect transport endpoint options)
       (write-only-channel serialize-data)))
 
 (defn sub-chan
@@ -245,29 +240,39 @@
                            (add-subscription socket topic))
                          (add-subscription socket topic))
                        socket))]
-    (-> (init-socket :sub bind-or-connect transport endpoint options)
+    (-> (init-socket ZMQ/SUB bind-or-connect transport endpoint options)
         (subscribe topics serialize-topic)
         (read-only-channel deserialize))))
 
 (defn xpub-chan
   [bind-or-connect transport endpoint & options]
-  (-> (init-socket :xpub bind-or-connect transport endpoint options)
+  (-> (init-socket ZMQ/XPUB bind-or-connect transport endpoint options)
       (write-only-channel serialize-data)))
 
 (defn xsub-chan
   [bind-or-connect transport endpoint & options]
-  (-> (init-socket :xsub bind-or-connect transport endpoint options)
+  (-> (init-socket ZMQ/XSUB bind-or-connect transport endpoint options)
       (read-only-channel deserialize)))
+
+(defn router-chan [bind-or-connect transport endpoint & options]
+  (chan ZMQ/ROUTER bind-or-connect transport endpoint options))
+
+(defn dealer-chan [bind-or-connect transport endpoint & options]
+  (chan ZMQ/DEALER bind-or-connect transport endpoint options))
 
 (defn push-chan
   [bind-or-connect transport endpoint & options]
-  (-> (init-socket :push bind-or-connect transport endpoint options)
+  (-> (init-socket ZMQ/PUSH bind-or-connect transport endpoint options)
       (write-only-channel serialize-data)))
 
 (defn pull-chan
   [bind-or-connect transport endpoint & options]
-  (-> (init-socket :pull bind-or-connect transport endpoint options)
+  (-> (init-socket ZMQ/PULL bind-or-connect transport endpoint options)
       (read-only-channel deserialize)))
+
+(defn pair-chan
+  [bind-or-connect transport endpoint & options]
+  (chan ZMQ/PAIR bind-or-connect transport endpoint options))
 
 (defn chan-proxy
   ([frontend backend]
