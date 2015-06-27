@@ -1,12 +1,12 @@
 (ns ^{:skip-wiki true}
-  core.async.zmq.devices
+  core.async.devices
   (:require [clojure.core.async :as async]))
 
 (set! *warn-on-reflection* true)
 
-(defn chan-proxy
+(defn capturing-proxy
   ([frontend backend]
-   (chan-proxy frontend backend nil))
+   (capturing-proxy frontend backend nil))
   ([frontend backend capture]
    (letfn [(pipe [in out capture]
                   (let [data (async/<! in)]
