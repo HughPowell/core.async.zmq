@@ -48,9 +48,9 @@ Then we build the big ball of chaos itself
 By default core.async.zmq uses the [JeroMQ](https://github.com/zeromq/jeromq) ZeroMQ Java implementation, so if you're using [Leiningen](https://github.com/technomancy/leiningen) add the following to your project.clj file
 
 
-    :dependencies [[org.clojure/clojure "1.6.0"]
-                   [org.clojure/core.async "0.1.0-SNAPSHOT"]
-                   [org.zeromq/jeromq "0.3.5-SNAPSHOT"]
+    :dependencies [[org.clojure/clojure "1.8.0"]
+                   [org.clojure/core.async "0.2.374"]
+                   [org.zeromq/jeromq "0.3.5"]
                    [core.async.zmq "0.1.0-SNAPSHOT"]]
     :repositories [["releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
                                 :username [:gpg :env/NEXUS_USERNAME]
@@ -62,7 +62,7 @@ By default core.async.zmq uses the [JeroMQ](https://github.com/zeromq/jeromq) Ze
 
 [JZMQ](https://github.com/zeromq/jzmq) should also work if you can install it, just replace the dependency on JeroMQ with the following
 
-    [org.zeromq/jzmq "3.0.1"]
+    [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
 
 
 <A name="toc6" title="Cool, so it works exactly like core.async then?" />
