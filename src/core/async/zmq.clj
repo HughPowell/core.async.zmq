@@ -1,5 +1,12 @@
+; Copyright (c) the Contributors as noted in the AUTHORS file.
+; This file is part of Global Domination. Resistance is useless.
+
+; This Source Code Form is subject to the terms of the Mozilla Public
+; License, v. 2.0. If a copy of the MPL was not distributed with this
+; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 (ns ^{:skip-wiki true
-      :doc "Library for creating core.async channels connected to ZeroMQ
+      :doc       "Library for creating core.async channels connected to ZeroMQ
       sockets. Each of the channels takes the following options:
       bind-or-connect: the method by which the socket connects to the system
                        topology.
@@ -14,9 +21,10 @@
       endpoint: the endpoint of the socket as a string
       options: ZeroMQ socket options
                :sndhwm"}
-  core.async.zmq
-  (:require [core.async.zmq.channel :as zmq])
-  (:import [org.zeromq ZMQ ZMQ$Socket]))
+core.async.zmq
+  (:require [core.async.zmq.channel :as zmq]
+            [core.async.zmq.edn-serialiser :as serialiser])
+  (:import [org.zeromq ZMQ]))
 
 (set! *warn-on-reflection* true)
 
@@ -28,80 +36,120 @@
 (defn req-chan
   "Create a ZeroMQ Request socket with a core.async channel to send and receive
   messages to and from it."
-  [bind-or-connect transport endpoint & options]
-  (zmq/chan ZMQ/REQ bind-or-connect transport endpoint options))
+  ([bind-or-connect transport endpoint]
+   (req-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (req-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-write-channel ZMQ/REQ bind-or-connect transport endpoint options serialiser)))
 
 (defn rep-chan
   "Create a ZeroMQ Reply socket with a core.async channel to send and receive
   messages to and from it."
-  [bind-or-connect transport endpoint & options]
-  (zmq/chan ZMQ/REP bind-or-connect transport endpoint options))
+  ([bind-or-connect transport endpoint]
+   (rep-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (rep-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-write-channel ZMQ/REP bind-or-connect transport endpoint options serialiser)))
 
 (defn pub-chan
   "Create a ZeroMQ Publish socket with a core.async channel to send messages
   to it."
-  [bind-or-connect transport endpoint & options]
-  (-> (zmq/init-socket ZMQ/PUB bind-or-connect transport endpoint options)
-      (zmq/write-only-channel zmq/serialize-data)))
+  ([bind-or-connect transport endpoint]
+   (pub-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (pub-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/write-only-channel ZMQ/PUB bind-or-connect transport endpoint options serialiser)))
 
-(defn sub-chan
-  "Create a ZeroMQ Subscribe socket with a core.async channel to receive
-  messages from it."
-  [bind-or-connect transport endpoint topics & options]
-  (letfn [(subscribe [^ZMQ$Socket socket topic serialize-fn]
-                     (letfn [(add-subscription
-                              [^ZMQ$Socket socket topics]
-                              (.subscribe socket ^bytes (serialize-fn topic)))]
-                       (if (seq? topics)
-                         (doseq [topic topics]
-                           (add-subscription socket topic))
-                         (add-subscription socket topic))
-                       socket))]
-    (-> (zmq/init-socket ZMQ/SUB bind-or-connect transport endpoint options)
-        (subscribe topics zmq/serialize-topic)
-        (zmq/read-only-channel zmq/deserialize))))
+(defmulti sub-chan
+          "Create a ZeroMQ Subscribe socket with a core.async channel to receive
+          messages from it."
+          (fn [_ _ _ topics & _] (sequential? topics)))
+
+(defmethod sub-chan false
+  ([bind-or-connect transport endpoint topic]
+    (sub-chan bind-or-connect transport endpoint [topic]))
+  ([bind-or-connect transport endpoint topic options]
+    (sub-chan bind-or-connect transport endpoint [topic] options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint topic options serialiser]
+    (sub-chan bind-or-connect transport endpoint [topic] options serialiser)))
+
+(defmethod sub-chan true
+  ([bind-or-connect transport endpoint topics]
+    (sub-chan bind-or-connect transport endpoint topics {}))
+  ([bind-or-connect transport endpoint topics options]
+    (sub-chan bind-or-connect transport endpoint topics options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint topics options serialiser]
+    (zmq/read-only-channel ZMQ/SUB bind-or-connect transport endpoint options serialiser topics)))
 
 (defn xpub-chan
   "Create a ZeroMQ XPublish socket with a core.async channel to send messages
   to it."
-  [bind-or-connect transport endpoint & options]
-  (-> (zmq/init-socket ZMQ/XPUB bind-or-connect transport endpoint options)
-      (zmq/write-only-channel zmq/serialize-data)))
+  ([bind-or-connect transport endpoint]
+   (xpub-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (xpub-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/write-only-channel ZMQ/XPUB bind-or-connect transport endpoint options serialiser)))
 
 (defn xsub-chan
   "Create a ZeroMQ XSubscribe socket with a core.async channel to receive
   messages from it."
-  [bind-or-connect transport endpoint & options]
-  (-> (zmq/init-socket ZMQ/XSUB bind-or-connect transport endpoint options)
-      (zmq/read-only-channel zmq/deserialize)))
+  ([bind-or-connect transport endpoint]
+   (xsub-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (xsub-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-only-channel ZMQ/XSUB bind-or-connect transport endpoint options serialiser)))
 
-(defn router-chan [bind-or-connect transport endpoint & options]
+(defn router-chan
   "Create a ZeroMQ Router socket with a core.async channel to send and receive
   messages to and from it."
-  (zmq/chan ZMQ/ROUTER bind-or-connect transport endpoint options))
+  ([bind-or-connect transport endpoint]
+   (router-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (router-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-write-channel ZMQ/ROUTER bind-or-connect transport endpoint options serialiser)))
 
-(defn dealer-chan [bind-or-connect transport endpoint & options]
+(defn dealer-chan
   "Create a ZeroMQ Dealer socket with a core.async channel to send and receive
   messages to and from it."
-  (zmq/chan ZMQ/DEALER bind-or-connect transport endpoint options))
+  ([bind-or-connect transport endpoint]
+   (dealer-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (dealer-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-write-channel ZMQ/DEALER bind-or-connect transport endpoint options serialiser)))
 
 (defn push-chan
   "Create a ZeroMQ Push socket with a core.async channel to send messages to
   it."
-  [bind-or-connect transport endpoint & options]
-  (-> (zmq/init-socket ZMQ/PUSH bind-or-connect transport endpoint options)
-      (zmq/write-only-channel zmq/serialize-data)))
+  ([bind-or-connect transport endpoint]
+   (push-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (push-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/write-only-channel ZMQ/PUSH bind-or-connect transport endpoint options serialiser)))
 
 (defn pull-chan
   "Create a ZeroMQ Pull socket with a core.async channel to receive messages
   from it."
-  [bind-or-connect transport endpoint & options]
-  (-> (zmq/init-socket ZMQ/PULL bind-or-connect transport endpoint options)
-      (zmq/read-only-channel zmq/deserialize)))
+  ([bind-or-connect transport endpoint]
+   (pull-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (pull-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-only-channel ZMQ/PULL bind-or-connect transport endpoint options serialiser)))
 
 (defn pair-chan
   "Create a ZeroMQ Pair socket with a core.async channel to send and receive
   message to and from it."
-  [bind-or-connect transport endpoint & options]
-  (zmq/chan ZMQ/PAIR bind-or-connect transport endpoint options))
-
+  ([bind-or-connect transport endpoint]
+   (dealer-chan bind-or-connect transport endpoint {}))
+  ([bind-or-connect transport endpoint options]
+   (dealer-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
+  ([bind-or-connect transport endpoint options serialiser]
+   (zmq/read-write-channel ZMQ/PAIR bind-or-connect transport endpoint options serialiser)))
