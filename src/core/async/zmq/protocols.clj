@@ -5,11 +5,14 @@
 ; License, v. 2.0. If a copy of the MPL was not distributed with this
 ; file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-(ns core.async.zmq.protocols.serialiser)
+(ns core.async.zmq.protocols)
 
 (defprotocol ZmqSerialiser
-  "[De]Serialise the date put on and taken from a core.async.zmq channel"
-  (serialise-data [this data] "Serialise the given data")
-  (serialise-topic [this topic] "Serialise the topic in a manner suitable for use as a publish topic")
+  "Serialise the data to a byte array to put on a core.async.zmq channel"
+  (serialise-data [this data] "Serialise the given data to a byte array"))
+
+(defprotocol ZmqDeserialiser
+  "Deserialise the data from a byte array taken from a core.async.zmq channel"
+  (serialise-topic [this topic] "Serialise the topic in a manner suitable for use as a subscribe topic")
   (deserialise [this bytes] "Deserialise the given byte array"))
 

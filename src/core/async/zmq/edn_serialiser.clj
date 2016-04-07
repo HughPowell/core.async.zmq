@@ -7,30 +7,22 @@
 
 (ns core.async.zmq.edn-serialiser
   (:require [clojure.edn :as edn]
-            [core.async.zmq.protocols.serialiser :as serialiser]))
+            [core.async.zmq.protocols :as prot]))
 
 (def ^:const bytes-type (class (byte-array 0)))
 
-(defmulti serialise-data-to-edn class)
+(defmulti clj->frame class)
 
-(defmethod serialise-data-to-edn java.lang.String [data]
-  (.getBytes (str "\"" data "\"")))
-
-(defmethod serialise-data-to-edn bytes-type [data]
+(defmethod clj->frame bytes-type [data]
   data)
 
-(defmethod serialise-data-to-edn :default [data]
-  (.getBytes (str data)))
+(defmethod clj->frame nil [_]
+  (byte-array 0))
 
-(defmulti serialise-topic-to-edn class)
+(defmethod clj->frame :default [data]
+  (.getBytes (pr-str data)))
 
-(defmethod serialise-topic-to-edn java.lang.String [topic]
-  (.getBytes (str "\"" topic)))
-
-(defmethod serialise-topic-to-edn :default [topic]
-  (.getBytes (str topic)))
-
-(defn deserialise-from-edn [^bytes data]
+(defn frame->clj [^bytes data]
   (let [non-printable-ascii (set (byte-array (range 0x00 0x1F)))]
     (if (or (some non-printable-ascii data) (nil? data))
       data
@@ -38,8 +30,9 @@
 
 (deftype EdnSerialiser
   []
-  serialiser/ZmqSerialiser
-  (serialise-data [_ data] (serialise-data-to-edn data))
-  (serialise-topic [_ topic] (serialise-topic-to-edn topic))
-  (deserialise [_ bytes] (deserialise-from-edn bytes)))
+  prot/ZmqSerialiser
+  (serialise-data [_ data] (clj->frame data))
+  prot/ZmqDeserialiser
+  (serialise-topic [_ topic] (.getBytes (str topic)))
+  (deserialise [_ bytes] (frame->clj bytes)))
 

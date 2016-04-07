@@ -9,10 +9,11 @@
 core.async.zmq.channel
   (:require [clojure.core.async.impl.protocols :as impl]
             [clojure.core.async.impl.dispatch :as dispatch]
-            [core.async.zmq.protocols.serialiser :as serialiser])
+            [core.async.zmq.protocols :as prot])
   (:import [org.zeromq ZContext ZMQ ZMQ$Socket ZMQException]
            [java.util.concurrent.locks Lock]
-           [java.lang AutoCloseable]))
+           [java.lang AutoCloseable]
+           [clojure.lang IDeref]))
 
 (def ^:const transport-types
   {:inproc "inproc://"
@@ -39,8 +40,9 @@ core.async.zmq.channel
    (safe-recv! socket closed 0))
   ([^ZMQ$Socket socket closed flags]
    (try
-     (.recv socket flags)
-     (catch ZMQException e
+     (when-not @closed
+       (.recv socket flags))
+     (catch ZMQException _
        (close! socket closed)))))
 
 (defn- receive!
@@ -49,7 +51,7 @@ core.async.zmq.channel
   ([^ZMQ$Socket socket serialiser closed frame]
    (receive! socket serialiser closed frame true))
   ([^ZMQ$Socket socket serialiser closed frame first?]
-   (let [data (serialiser/deserialise serialiser frame)]
+   (let [data (prot/deserialise serialiser frame)]
      (when-not @closed
        (if (.hasReceiveMore socket)
          (cons data (lazy-seq (receive! socket serialiser closed)))
@@ -63,7 +65,7 @@ core.async.zmq.channel
     (close [_] (.unlock lock))))
 
 (defn- box [result]
-  (reify clojure.lang.IDeref
+  (reify IDeref
     (deref [_] result)))
 
 (def ^:private pollers (atom {}))
@@ -73,11 +75,9 @@ core.async.zmq.channel
 (defmulti take!
           (fn [_ _ _ handler] (impl/lock-id handler)))
 
-;;; FIXME: Take account of the handler, saving any message that is received
-;;;        while the handler in inactive
 (defmethod take! 0
   [^ZMQ$Socket socket serialiser closed ^Lock handler]
-  (when-not @closed
+  (when (impl/active? handler)
     (->> (safe-recv! socket closed)
          (receive! socket serialiser closed)
          box)))
@@ -85,41 +85,43 @@ core.async.zmq.channel
 ;;; HACK: Polling is not a good idea, but the only way I could get it to work
 (defmethod take! :default
   [^ZMQ$Socket socket serialiser closed ^Lock handler]
-  (when-not @closed
-    (with-open [^AutoCloseable _ (closeable-lock handler)]
-      (when (impl/active? handler)
-        (let [poll (fn []
-                     (with-open [^AutoCloseable _ (closeable-lock handler)]
-                       (when-let [message
-                                  (and (impl/active? handler)
-                                       (safe-recv! socket closed ZMQ/NOBLOCK))]
-                         (let [commit (impl/commit handler)]
-                           (->> message
-                                (receive! socket serialiser closed)
-                                commit)
-                           (swap! pollers dissoc (impl/lock-id handler))))))
-              lock-id (impl/lock-id handler)
-              poll-set (->>
-                         (get @pollers lock-id #{})
-                         (cons poll)
-                         (swap! pollers assoc lock-id))]
-          (when (= (count (poll-set lock-id)) 1)
-            (dispatch/run
-              (fn []
-                (while (impl/active? handler)
-                  (dorun (map
-                           #(%)
-                           (get @pollers lock-id)))
+  (with-open [^AutoCloseable _ (closeable-lock handler)]
+    (when (and (impl/active? handler) (not @closed))
+      (let [poll (fn []
+                   (with-open [^AutoCloseable _ (closeable-lock handler)]
+                     (when-let [message
+                                (and (impl/active? handler)
+                                     (safe-recv! socket closed ZMQ/NOBLOCK))]
+                       (let [commit (impl/commit handler)]
+                         (->> message
+                              (receive! socket serialiser closed)
+                              commit)
+                         (swap! pollers dissoc (impl/lock-id handler))))))
+            lock-id (impl/lock-id handler)
+            poll-set (->>
+                       (get @pollers lock-id #{})
+                       (cons poll)
+                       (swap! pollers assoc lock-id))]
+        (when (= (count (poll-set lock-id)) 1)
+          (dispatch/run
+            (fn []
+              (while (impl/active? handler)
+                (when-not
+                  (loop [poll-set (shuffle (get @pollers lock-id))]
+                    (when-let [poll (first poll-set)]
+                      (if-let [message (poll)]
+                        message
+                        (recur (rest poll-set)))))
                   (Thread/sleep 1))))))))))
 
 (defn- send! [^ZMQ$Socket socket message serializer]
   (if-not (sequential? message)
-    (.send socket ^bytes (serialiser/serialise-data serializer message))
+    (.send socket ^bytes (prot/serialise-data serializer message))
     (let [remaining (rest message)]
       (if (empty? remaining)
         (recur socket (first message) serializer)
         (do
-          (.sendMore socket ^bytes (serialiser/serialise-data serializer (first message)))
+          (.sendMore socket ^bytes (prot/serialise-data serializer (first message)))
           (recur socket remaining serializer))))))
 
 (defn- put! [^ZMQ$Socket socket closed message serializer handler]
@@ -175,7 +177,7 @@ core.async.zmq.channel
   ([socket-type bind-or-connect transport endpoint options serialiser topics]
    (letfn [(add-subscription
              [^ZMQ$Socket socket topic]
-             (.subscribe socket ^bytes (serialiser/serialise-topic serialiser topic)))]
+             (.subscribe socket ^bytes (prot/serialise-topic serialiser topic)))]
      (let [socket (init-socket socket-type bind-or-connect transport endpoint options)]
        (doall (map (partial add-subscription socket) topics))
        (ReadOnlyChannel. socket serialiser (atom false))))))
