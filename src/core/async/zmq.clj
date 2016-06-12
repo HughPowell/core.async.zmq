@@ -23,7 +23,9 @@
                :sndhwm"}
 core.async.zmq
   (:require [core.async.zmq.channel :as zmq]
-            [core.async.zmq.edn-serialiser :as serialiser])
+            [core.async.zmq.edn-serialiser :as serialiser]
+            [core.async.zmq.devices :as devices])
+  (:refer-clojure :exclude [proxy])
   (:import [org.zeromq ZMQ]))
 
 (set! *warn-on-reflection* true)
@@ -143,3 +145,7 @@ core.async.zmq
    (dealer-chan bind-or-connect transport endpoint options (serialiser/->EdnSerialiser)))
   ([bind-or-connect transport endpoint options serialiser]
    (zmq/read-write-channel ZMQ/PAIR bind-or-connect transport endpoint options serialiser)))
+
+(defn proxy
+  ([frontend backend] (devices/proxy frontend backend))
+  ([frontend backend capture] (devices/proxy frontend backend capture)))

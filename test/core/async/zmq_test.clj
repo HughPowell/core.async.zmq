@@ -68,7 +68,7 @@
 (deftest push-pull
   []
   (let [greeting "Hello"
-        sender (sender greeting)
+        _ (sender greeting)
         receiver (receiver)]
     (is (= (async/<!! receiver) greeting))))
 
@@ -94,15 +94,11 @@
 
 (deftest alt
   []
-  (async/go-loop
-    [frontend (zmq/router-chan :bind :tcp "*:5560")
-     backend (zmq/dealer-chan :bind :tcp "*:5561")]
-    (async/alt!
-      frontend ([msg] (async/>! backend msg))
-      backend ([msg] (async/>! frontend msg)))
-    (recur frontend backend))
+  (let [frontend (zmq/router-chan :bind :tcp "*:5560")
+        backend (zmq/dealer-chan :bind :tcp "*:5561")]
+    (zmq/proxy frontend backend))
 
-  (dotimes [n 3]
+  (dotimes [_ 3]
     (async/go-loop
       [worker (zmq/rep-chan :connect :tcp "localhost:5561")]
       (async/>! worker (async/<! worker))
