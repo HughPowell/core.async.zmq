@@ -1,5 +1,5 @@
 install:
-    git clone https://github.com/zeromq/jeromq.git
-    cd jeromq
-    mvn install --quiet -DskipTests=true -Dgpg.skip=true
+    - git clone https://github.com/zeromq/jeromq.git
+    - cd jeromq
+    - mvn install --quiet -DskipTests=true -Dgpg.skip=true
 language: clojure
