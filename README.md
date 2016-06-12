@@ -26,16 +26,16 @@ Right then, [ZeroMQ](http://zguide.zeromq.org) rocks my socks having taken "a no
 <A name="toc4" title="That sounds sweet, how do I add it to my enterprise architecture?" />
 ### That sounds sweet, how do I add it to my enterprise architecture?
 
-Correct, you're right it does. Umm ... not yet, this thing's still as raw as steak tartare. The plan (and I use that term in the loosest possible sense, something shinier and prettier is bound to come along at some point) is to work through the examples in the [ZeroMQ Guide](http://zguide.zeromq.org/page:all) (seriously if you haven't read this go do it, even if it's only to learn how to write awesome documentation) adding and refactoring functionality as required.
+Correct, you're right, it does. Umm ... not yet, this thing's still as raw as steak tartare. The plan (and I use that term in the loosest possible sense, something shinier and prettier is bound to come along at some point) is to work through the examples in the [ZeroMQ Guide](http://zguide.zeromq.org/page:all) (seriously if you haven't read this go do it, even if it's only to learn how to write awesome documentation) adding and refactoring functionality as required.
 
 <A name="toc5" title="Start ... Your ... Engines" />
 ### Start ... Your ... Engines
 
-First off we need the brand spanking new, not even released yet (yeah, that sounds safe) core.async so do the following so that core.async.zmq can access it
+First off we need the brand spanking new, not even released yet (yeah, that sounds safe) version of JeroMQ otherwise, sockets won't close properly on termination.  So do the following so that core.async.zmq can access it
 
-    git clone https://github.com/clojure/core.async.git
-    cd core.async
-    lein install
+    git clone https://github.com/zeromq/jeromq.git
+    cd jeromq
+    mvn install
     cd ..
 
 Then we build the big ball of chaos itself
@@ -50,20 +50,22 @@ By default core.async.zmq uses the [JeroMQ](https://github.com/zeromq/jeromq) Ze
 
     :dependencies [[org.clojure/clojure "1.8.0"]
                    [org.clojure/core.async "0.2.374"]
-                   [org.zeromq/jeromq "0.3.5"]
+                   [org.zeromq/jeromq "0.3.6-SNAPSHOT"]
                    [core.async.zmq "0.1.0-SNAPSHOT"]]
+
+[JZMQ](https://github.com/zeromq/jzmq) should also work if you can install it, just replace the dependency on JeroMQ with the following dependency
+
+    [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
+
+and the following repositories
+
     :repositories [["releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
                                 :username [:gpg :env/NEXUS_USERNAME]
                                 :password [:gpg :env/NEXUS_PASSWORD]}]
                    ["snapshots" {:url "https://oss.sonatype.org/content/repositories/snapshots"
                                  :username [:gpg :env/NEXUS_USERNAME]
                                  :password [:gpg :env/NEXUS_PASSWORD]
-                                 :update :always}]])
-
-[JZMQ](https://github.com/zeromq/jzmq) should also work if you can install it, just replace the dependency on JeroMQ with the following
-
-    [org.zeromq/jzmq "3.1.1-SNAPSHOT"]
-
+                                 :update :always}]]
 
 <A name="toc6" title="Cool, so it works exactly like core.async then?" />
 ### Cool, so it works exactly like core.async then?
