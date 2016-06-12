@@ -12,9 +12,9 @@
             :url "https://www.mozilla.org/MPL/2.0/"}
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [org.clojure/core.async "0.2.374"]
-                 [org.zeromq/jeromq "0.3.5"]]
+                 [org.zeromq/jeromq "0.3.6-SNAPSHOT"]]
 ;;                 [org.zeromq/jzmq "3.1.1-SNAPSHOT"]]
-  :repositories [["releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
+  #_:repositories #_[["releases" {:url "https://oss.sonatype.org/service/local/staging/deploy/maven2/"
                               :username [:gpg :env/NEXUS_USERNAME]
                               :password [:gpg :env/NEXUS_PASSWORD]}]
                  ["snapshots" {:url "https://oss.sonatype.org/content/repositories/snapshots"
